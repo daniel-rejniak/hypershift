@@ -1,0 +1,8 @@
+# HostedCluster merge patch; preserve any existing imageContentSources entries.
+# Matching bootstrap/OS images use the same mirror rule.
+# GAR authentication is required; source fallback remains enabled.
+spec:
+  imageContentSources:
+    - source: quay.io/openshift-release-dev/ocp-v4.0-art-dev
+      mirrors:
+        - us-central1-docker.pkg.dev/dev-mgt-us-c1-drejniak/quay-pullthrough/openshift-release-dev/ocp-v4.0-art-dev

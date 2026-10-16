@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gcp-gar-credential-helper
+data:
+  config: |
+    apiVersion: machineconfiguration.openshift.io/v1
+    kind: MachineConfig
+    metadata:
+      name: 99-gcp-gar-credential-helper
+      labels:
+        machineconfiguration.openshift.io/role: worker
+    spec:
+      config:
+        ignition:
+          version: 3.2.0
+        storage:
+          files:
+            - path: /etc/hypershift/gar-credential-helper.json
+              mode: 420
+              contents:
+                source: data:application/json;base64,eyJpbWFnZSI6InF1YXkuaW8vcmVkaGF0LXVzZXItd29ya2xvYWRzL2djcC1oY3AtdGVuYW50L2djcC1yZWxlYXNlLXV0aWxzQHNoYTI1Njo2YTIwNjlmMmJlY2MyMjIzMDUyYWZjOWUyNTA1M2UxODFlZDY5MGM0ZjNkN2NlM2M4NDFlNDQzNzZmNTJjMzVkIiwiYXJjaGl0ZWN0dXJlIjoiYW1kNjQiLCJyZWdpc3RyaWVzIjpbInVzLWNlbnRyYWwxLWRvY2tlci5wa2cuZGV2Il19

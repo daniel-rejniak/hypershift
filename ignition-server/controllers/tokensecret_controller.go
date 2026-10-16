@@ -224,6 +224,27 @@ func (r *TokenSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, err
 	}
 
+	compressedConfig := tokenSecret.Data[TokenSecretConfigKey]
+	config, err := util.DecodeAndDecompress(compressedConfig)
+	if err != nil {
+		errWithFullMsg := fmt.Errorf("failed to decode and decompress config: %w", err)
+		if hasSameReasonAndMessage(tokenSecret, InvalidConfigReason, errWithFullMsg) {
+			return ctrl.Result{}, errWithFullMsg
+		}
+
+		patch := tokenSecret.DeepCopy()
+		patch.Data[TokenSecretReasonKey] = []byte(InvalidConfigReason)
+		patch.Data[TokenSecretMessageKey] = []byte(errWithFullMsg.Error())
+		if err := r.Client.Patch(ctx, patch, client.MergeFrom(tokenSecret)); err != nil {
+			return ctrl.Result{}, fmt.Errorf("failed to patch tokenSecret with payload content: %w", err)
+		}
+
+		return ctrl.Result{}, err
+	}
+	if string(hyperv1.UpgradeTypeInPlace) == tokenSecret.Annotations[TokenSecretNodePoolUpgradeType] && strings.Contains(config.String(), garCredentialHelperConfigPath) {
+		return ctrl.Result{}, fmt.Errorf("GAR helper delivery requires a Replace NodePool; the binary cannot be stored in an InPlace payload Secret")
+	}
+
 	// Otherwise proceed to generate the payload and cache the content.
 	// Rotate the Token if necessary.
 	now := time.Now()
@@ -266,23 +287,6 @@ func (r *TokenSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 
 	releaseImage := string(tokenSecret.Data[TokenSecretReleaseKey])
-	compressedConfig := tokenSecret.Data[TokenSecretConfigKey]
-	config, err := util.DecodeAndDecompress(compressedConfig)
-	if err != nil {
-		errWithFullMsg := fmt.Errorf("failed to decode and decompress config: %w", err)
-		if hasSameReasonAndMessage(tokenSecret, InvalidConfigReason, errWithFullMsg) {
-			return ctrl.Result{}, errWithFullMsg
-		}
-
-		patch := tokenSecret.DeepCopy()
-		patch.Data[TokenSecretReasonKey] = []byte(InvalidConfigReason)
-		patch.Data[TokenSecretMessageKey] = []byte(errWithFullMsg.Error())
-		if err := r.Client.Patch(ctx, patch, client.MergeFrom(tokenSecret)); err != nil {
-			return ctrl.Result{}, fmt.Errorf("failed to patch tokenSecret with payload content: %w", err)
-		}
-
-		return ctrl.Result{}, err
-	}
 
 	PayloadCacheMissTotal.Inc()
 	pullSecretHash := string(tokenSecret.Data[TokenSecretPullSecretHashKey])

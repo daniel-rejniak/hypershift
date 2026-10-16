@@ -829,6 +829,15 @@ func (p *LocalIgnitionProvider) GetPayload(ctx context.Context, releaseImage, cu
 	if err != nil {
 		return nil, fmt.Errorf("failed to get payload from mcs: %w", err)
 	}
+	if p.CloudProvider == hyperv1.GCPPlatform {
+		return configureGCPGARWorker(payload, func(image string) ([]byte, error) {
+			var helper bytes.Buffer
+			if err := p.ImageFileCache.extractImageFile(ctx, image, pullSecret, "usr/local/bin/docker-credential-gcr", &helper); err != nil {
+				return nil, err
+			}
+			return helper.Bytes(), nil
+		})
+	}
 
 	return payload, nil
 }
