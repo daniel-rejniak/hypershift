@@ -1,0 +1,21 @@
+spec:
+  template:
+    spec:
+      containers:
+      - name: operator
+        image: us-central1-docker.pkg.dev/dev-mgt-us-c1-drejniak/openshift-pullthrough/acm-d/rhtap-hypershift-operator:bc8675b2441e1f1d7f07d68687945f2de85e7526
+        args:
+        - run
+        - --namespace=$(MY_NAMESPACE)
+        - --pod-name=$(MY_NAME)
+        - --metrics-addr=:9000
+        - --enable-dedicated-request-serving-isolation=true
+        - --enable-ocp-cluster-monitoring=false
+        - --enable-ci-debug-output=false
+        - --private-platform=GCP
+        - --cert-dir=/var/run/secrets/serving-cert
+        - --gcp-oidc-storage-bucket-name=dev-reg-us-c1-drejniak-oidc
+        - --registry-overrides=quay.io=us-central1-docker.pkg.dev/dev-mgt-us-c1-drejniak/openshift-pullthrough,registry.redhat.io=us-central1-docker.pkg.dev/dev-mgt-us-c1-drejniak/openshift-pullthrough
+      initContainers:
+      - name: init-environment
+        image: us-central1-docker.pkg.dev/dev-mgt-us-c1-drejniak/openshift-pullthrough/acm-d/rhtap-hypershift-operator:bc8675b2441e1f1d7f07d68687945f2de85e7526

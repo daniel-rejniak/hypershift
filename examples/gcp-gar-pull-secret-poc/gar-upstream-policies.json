@@ -1,0 +1,12 @@
+[
+  {
+    "id": "quay",
+    "repository": "projects/dev-mgt-us-c1-drejniak/locations/us-central1/repositories/quay-pullthrough",
+    "priority": 100
+  },
+  {
+    "id": "redhat",
+    "repository": "projects/dev-mgt-us-c1-drejniak/locations/us-central1/repositories/redhat-pullthrough",
+    "priority": 90
+  }
+]

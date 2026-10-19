@@ -1,0 +1,6 @@
+spec:
+  template:
+    spec:
+      containers:
+      - name: external-dns
+        image: us-central1-docker.pkg.dev/dev-mgt-us-c1-drejniak/openshift-pullthrough/edo/external-dns-rhel9@sha256:4450e6eac021e7f88f756f62e1043d6f8d6baddf99080ec4ad367c68ef5191f5
