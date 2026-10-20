@@ -626,47 +626,28 @@ those source passwords are separate from the cluster's GAR login.
 
 ## Automate credential creation and rotation
 
-Future work would automate login creation and delivery. Regional credential
-storage and automatic rotation have not been tested in the POC.
+**Initial idea:** one download account and login per region, managed by a
+Job/CronJob in one management cluster. ESO distributes it to the region's
+clusters. Regional automation remains untested.
 
-**Proposed sequence:**
+| Step | Initial implementation idea |
+| --- | --- |
+| Setup | Infrastructure creates a GAR Reader account and an empty Secret Manager secret in the regional project. The Job uses its own Workload Identity with scoped management permissions; ESO gets read-only access. |
+| Generate | Reuse a valid login, or create a JSON key, build the Docker login, test GAR access, and upload it. Keep credentials outside Git, logs, and Terraform state. |
+| Deliver | Infrastructure configures the operator's ESO merge; Gecko configures each HostedCluster's merge. Preserve existing registry entries. Wait for final pull secrets before enabling GAR or creating workers. |
+| Rotate | Create/test replacement → publish → confirm every consumer updated → disable old key → verify fresh pulls → delete after observation. Keep the old key enabled until all consumers update; save progress for recovery. |
+| Remove | Remove deleted clusters from the consumer list. Retain credentials shared by remaining clusters. |
 
-1. Regional setup creates the GAR repositories, a download account with read
-   access, and a Secret Manager secret in the regional project.
-2. A setup job uses Workload Identity to generate the account's JSON key, build
-   the Docker login, verify GAR access, and store it. Normal redeployments reuse
-   the stored login. Keep private values outside Git, logs, and Terraform state.
-3. ESO reads the regional login and merges it into existing regional and
-   management-cluster pull secrets. Infrastructure configuration defines the
-   operator's merge; Gecko defines each HostedCluster's merge. Wait for the
-   combined secrets before enabling GAR image addresses or creating workers.
-4. A scheduled job replaces the login. Keep the old key valid until all clusters,
-   existing workers, and worker startup data use the replacement. Disable the
-   old key, verify fresh downloads, then delete it.
+**To prove:** key policy, account sharing and rotation period; updates to existing
+GCP workers and startup data; tracking delivery, handling unavailable clusters,
+and recovering interrupted jobs. ESO sync alone does not prove worker updates.
 
-**Open questions:**
+**First spike:** prove setup without an existing login, reuse on redeployment,
+and forced rotation. Include existing workers, scale-out of an existing NodePool
+after an ignition-server restart, and recovery. Verify fresh downloads with the
+old key disabled and direct public-registry access blocked.
 
-- Are service-account keys permitted, and what rotation period is required?
-- Should a download account be shared across a region or separated by customer?
-- What changes are needed to update existing GCP workers and their startup data
-  without replacing nodes?
-- How does the job confirm every cluster has updated, and handle an unavailable
-  cluster or an interrupted replacement?
-
-**What would prove it works:**
-
-- Start without a login, deploy the setup, and create a HostedCluster. Confirm
-  fresh GAR downloads from its control plane and workers without manual steps.
-  Repeat deployment and confirm the working credential is reused.
-- Force a replacement, update existing workers, and add a worker to an existing
-  NodePool after restarting the ignition server. Disable the old key and confirm
-  fresh downloads with direct Quay and Red Hat access blocked.
-- Interrupt the job or delay a secret update. Confirm it keeps the old key valid,
-  reports the missing update, and can resume or restore the previous login.
-
-The [draft pull-secret lifecycle plan](PULL-SECRET-LIFECYCLE-PLAN.md) breaks down
-automatic creation, rotation, worker updates, and the checks required before
-removing an old credential.
+See the [draft pull-secret lifecycle plan](PULL-SECRET-LIFECYCLE-PLAN.md) for details.
 
 ## Proposed implementation sequence
 
