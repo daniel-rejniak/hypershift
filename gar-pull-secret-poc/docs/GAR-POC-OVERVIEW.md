@@ -33,7 +33,7 @@
 7. [Proposed implementation sequence](#proposed-implementation-sequence)
 
     - [New epic: Regional GAR and pull-secret lifecycle](#new-epic-regional-gar-and-pull-secret-lifecycle)
-    - [GCP-1268: Switch cluster image downloads to GAR](#gcp-1268-switch-cluster-image-downloads-to-gar)
+    - [GCP-1268: Switch control-plane and worker image downloads to GAR](#gcp-1268-switch-control-plane-and-worker-image-downloads-to-gar)
     - [Tests and supporting improvements](#tests-and-supporting-improvements)
 
 8. [Reference files](#reference-files)
@@ -718,7 +718,7 @@ disabled outside the test setup until this is proven.
 
 </details>
 
-### GCP-1268: Switch cluster image downloads to GAR
+### GCP-1268: Switch control-plane and worker image downloads to GAR
 
 Owns steps 3–5. Start with workers, then control-plane components. Keep existing
 public-registry access until step 5.
