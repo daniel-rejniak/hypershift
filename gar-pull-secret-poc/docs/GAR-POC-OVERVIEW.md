@@ -12,6 +12,7 @@
 
 3. [Create and store the GAR pull secret](#create-and-store-the-gar-pull-secret)
 
+    - [Authentication options and POC choice](#authentication-options-and-poc-choice)
     - [Manual commands](#manual-commands)
 
 4. [Inject the pull secret into the clusters](#inject-the-pull-secret-into-the-clusters)
@@ -123,6 +124,28 @@ These repositories and source-registry logins are shared regional infrastructure
 The next section creates the separate GAR login used by clusters.
 
 ## Create and store the GAR pull secret
+
+### Authentication options and POC choice
+
+Two approaches were tested for GAR authentication:
+
+| Approach | How it works | POC result and choice |
+| --- | --- | --- |
+| Short-lived access tokens through a credential helper | Google's `docker-credential-gcr` helper obtains tokens using the worker's Google identity. Ignition installs the helper and configures worker image downloads to use it. | Validated for workers on `v3-mirror-dynamic-creds`. Required a pinned helper image and changes to worker startup and runtime configuration. |
+| Service-account JSON key in a pull secret | A Docker login using `_json_key` is stored in Secret Manager. ESO merges it into the existing pull secrets. | **Chosen for the current POC.** Validated for workers and the control plane, with minimal code changes and no additional worker credential helper. |
+
+Google's official [GAR authentication documentation](https://docs.cloud.google.com/artifact-registry/docs/docker/authentication)
+describes access tokens, service-account keys, and credential helpers. Access
+tokens normally last **60 minutes**; JSON keys are long-lived. Google recommends
+access tokens or credential helpers where possible.
+
+The pull-secret approach reused the existing credential delivery and image
+authentication paths. This was a POC choice; the production credential method
+remains open. The dynamic worker POC used a local helper. Refreshing short-lived
+tokens through ESO for both control-plane consumers and workers has not been
+validated.
+
+**POC setup:**
 
 The POC started with worker nodes, so the download account and stored login
 were created in the customer project. When the POC expanded to the control
@@ -625,6 +648,10 @@ backing repositories. GAR uses its own Quay or Red Hat login for that last step;
 those source passwords are separate from the cluster's GAR login.
 
 ## Automate credential creation and rotation
+
+The outline below follows the JSON-key option selected for the POC. Production
+work must compare this with short-lived authentication and prove credential
+refresh for every consumer.
 
 **Initial idea:** one download account and login per region, managed by a
 Job/CronJob in one management cluster. ESO distributes it to the region's
