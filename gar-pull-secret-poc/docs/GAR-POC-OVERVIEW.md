@@ -653,11 +653,25 @@ those source passwords are separate from the cluster's GAR login.
 
 ## Automate credential creation and rotation
 
-The outline below follows the JSON-key option selected for the POC. Production
-work must compare this with short-lived authentication and prove credential
-refresh for every consumer.
+**Future work: choose the credential method, then prove its lifecycle.** The POC
+used a long-lived service-account JSON key. The production choice remains open;
+the automation needed depends on whether credentials are short-lived access
+tokens or long-lived keys.
 
-**Initial idea:** one download account and login per region, managed by a
+| Credential method | Automation to explore |
+| --- | --- |
+| Short-lived access tokens | Prove automatic renewal before expiry. The worker helper obtains tokens locally; Alternative 3 explores ESO generation through WIF and delivery through pull secrets. Prove each consumer receives valid credentials. |
+| Long-lived service-account JSON keys | Investigate automated key creation, storage in Secret Manager, delivery through ESO, and scheduled replacement. Retire an old key only after consumers use its replacement. |
+
+For either method, prove initial setup, renewal, and recovery for control-plane
+consumers, existing workers, and workers added to an existing NodePool. Include
+an ignition-server restart and fresh image downloads. ESO Secret updates alone
+do not prove the complete lifecycle works.
+
+<details>
+<summary>Earlier JSON-key automation idea — one option to investigate</summary>
+
+**JSON-key option only:** one download account and login per region, managed by a
 Job/CronJob in one management cluster. ESO distributes it to the region's
 clusters. Regional automation remains untested.
 
@@ -680,6 +694,8 @@ old key disabled and direct public-registry access blocked.
 
 See the [draft pull-secret lifecycle plan](PULL-SECRET-LIFECYCLE-PLAN.md) for details.
 
+</details>
+
 ### Alternative 3: ESO-generated short-lived tokens
 
 **Investigation only; not deployed or validated in this POC.** ESO's
@@ -695,6 +711,52 @@ supports Workload Identity. The proposed flow is:
 ESO already uses WIF to read Secret Manager in the POC. This alternative changes
 the **GAR credential inside the pull secret**. Only the base RH credentials need
 to come from Secret Manager; temporary GAR tokens would be generated directly.
+
+<details>
+<summary>Regional setup: where secrets live and how access is granted</summary>
+
+**Proposed ownership:** GAR is regional. Each management cluster generates and
+refreshes its own tokens; no management cluster supplies tokens to the others.
+
+| Location | Resources and credentials |
+| --- | --- |
+| Regional project | Two remote GAR repositories, one virtual repository, and repository access policies. |
+| Global project | Existing RH pull secrets in Secret Manager, retained in their current location. |
+| Management project | One dedicated Google GAR download service account per management cluster, with no JSON key. |
+| Management cluster | ESO generators and merged Kubernetes Secrets: `hypershift/pull-secret` and `pull-secret` in each HostedCluster namespace. HyperShift maintains the control-plane namespace copies. |
+| Guest cluster and customer workers | HyperShift maintains guest pull-secret copies and supplies worker credentials. This option requires no GAR login entry in customer-project Secret Manager. Existing-worker renewal still needs proving. |
+
+**Access grants:**
+
+1. Grant the management cluster's Google download account
+   `roles/artifactregistry.reader` on the **regional virtual repository**.
+   That permission covers images served through its upstream repositories.
+   See [GAR access control](https://docs.cloud.google.com/artifact-registry/docs/access-control).
+2. Allow only the selected generator Kubernetes service accounts to use that
+   Google identity through WIF. Link them using the service-account annotation
+   and `roles/iam.workloadIdentityUser` on the Google account.
+   See [Google's identity-linking guidance](https://docs.cloud.google.com/kubernetes-engine/docs/how-to/workload-identity#use_service_account_impersonation).
+3. Retain ESO's separate `roles/secretmanager.secretAccessor` grants on the
+   existing base RH secrets. GAR access does not grant Secret Manager access.
+
+Workers use the delivered token, which represents the management cluster's
+download account. This approach requires no additional GAR IAM grant for each
+worker. Keep the generated Secrets namespace scoped and restrict access through
+Kubernetes RBAC. GKE container image pulls retain their separate node-IAM path.
+
+**Deployment order:**
+
+1. Regional setup creates GAR and publishes its virtual repository address.
+2. Management-cluster setup creates its download identity, WIF links and regional
+   GAR permission, then configures ESO and the operator's merged pull secret.
+3. HostedCluster creation configures its generator and ExternalSecret. Wait for
+   the final pull secret before enabling GAR image settings or creating workers.
+
+The regional configuration supplies the GAR address and permissions. Tokens are
+generated locally and are not stored in regional or customer Secret Manager.
+GAR's own Quay/Red Hat upstream credentials remain separate from these tokens.
+
+</details>
 
 **Checks before choosing this approach:**
 

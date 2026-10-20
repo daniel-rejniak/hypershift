@@ -2,14 +2,18 @@
 
 ## Goal and scope
 
+Credential lifecycle automation remains future work. First choose between
+short-lived access tokens and long-lived service-account keys; then prove the
+generation, delivery, renewal, and recovery required by that method.
+
 After deploying the POC configuration, generate the GAR login automatically,
 deliver it to control planes and workers, and replace it without interrupting
-image downloads. Test the complete replacement process before enabling automatic
-removal of old keys.
+image downloads. For the JSON-key option, test the complete replacement process
+before enabling automatic removal of old keys.
 
 Keep GAR in the current management project for this work. The implementation
-outline below describes the tested service-account JSON-key option, using Secret
-Manager and External Secrets Operator (ESO). It assumes service-account key
+outline below builds on the JSON-key authentication tested in the POC, using
+Secret Manager and External Secrets Operator (ESO). It assumes service-account key
 creation is permitted and one shared download account per region. Rotation
 periods remain configurable.
 
@@ -154,6 +158,9 @@ rotation is still waiting for consumers, stop creating keys and report the delay
 
 ## Where the implementation belongs
 
+The table below describes the JSON-key option. The ESO-token alternative uses
+generator configuration in place of the credential generation and rotation jobs.
+
 | Location | Proposed work |
 | --- | --- |
 | POC `scripts/` | Separate generation/rotation code from infrastructure setup; add verification and recovery helpers. |
@@ -163,6 +170,8 @@ rotation is still waiting for consumers, stop creating keys and report the delay
 | Gecko, later | Generate each HostedCluster's ExternalSecret from its region's credential settings. |
 
 ## When GAR becomes regional
+
+### JSON-key option
 
 Run one credential job for the region. Store its login in regional Secret Manager
 and grant each management cluster's ESO identity read access. Each management
@@ -182,3 +191,27 @@ removal can be enabled.
 Deleting one HostedCluster removes it from the consumer list after its resources
 are gone; it does not revoke a credential shared by other clusters. Remove the
 regional credential only after the region has no remaining consumers.
+
+### ESO-generated token option
+
+Keep GAR regional and have each management cluster generate its own tokens.
+Create one keyless Google download account per management cluster in its
+management project. Grant it `roles/artifactregistry.reader` on the regional
+virtual repository, and authorize only the selected generator Kubernetes service
+accounts to use it through WIF. Retain ESO's separate access to the existing RH
+secrets in global Secret Manager.
+
+ESO merges generated tokens with those RH credentials into Kubernetes pull
+secrets in the operator and HostedCluster namespaces. HyperShift maintains the
+control-plane and guest copies and supplies worker credentials. Tokens are not
+stored in Secret Manager, and workers need no additional GAR IAM grant: they use
+the management cluster's download identity through the delivered token.
+
+Regional setup provisions GAR; management-cluster setup provisions the identity,
+access grants, and operator ESO configuration; HostedCluster creation configures
+its generator and ExternalSecret before creating workers. Each management cluster
+refreshes independently, with no shared regional credential job.
+
+This remains unvalidated. Prove existing-worker renewal and new-worker bootstrap
+through repeated token expirations. See the [overview's third-alternative investigation](GAR-POC-OVERVIEW.md#alternative-3-eso-generated-short-lived-tokens)
+for placement, access grants, and checks.
