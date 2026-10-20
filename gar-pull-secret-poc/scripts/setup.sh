@@ -83,4 +83,4 @@ gcloud secrets versions add "$secret" --project="$customer_project" \
   --data-file="$work_dir/dockerconfig.json" --quiet
 published=true
 echo "GAR credentials are stored in $customer_project/$secret."
-echo "Apply external-secret.yaml to create the merged Kubernetes pull secret."
+echo "Apply examples/external-secret.yaml to create the merged Kubernetes pull secret."

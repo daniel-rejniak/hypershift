@@ -13,7 +13,7 @@ LOCATION = 'us-central1'
 SECRET = 'redhat-pullthrough-upstream-password'
 AGENT = 'service-' + NUMBER + '@gcp-sa-artifactregistry.iam.gserviceaccount.com'
 PULLER = 'gar-pull-secret-poc@drejniak-hcp-dev.iam.gserviceaccount.com'
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parent.parent
 os.umask(0o077)
 
 def command(label, args, data=None, optional=False):
@@ -57,7 +57,7 @@ for repo in ['quay-pullthrough', 'redhat-pullthrough']:
     command('grant virtual service agent access to ' + repo, ['artifacts', 'repositories', 'add-iam-policy-binding', repo, '--project=' + PROJECT, '--location=' + LOCATION, '--member=serviceAccount:' + AGENT, '--role=roles/artifactregistry.reader', '--format=json'])
 
 policy = [{'id': 'quay', 'repository': 'projects/' + PROJECT + '/locations/' + LOCATION + '/repositories/quay-pullthrough', 'priority': 100}, {'id': 'redhat', 'repository': 'projects/' + PROJECT + '/locations/' + LOCATION + '/repositories/redhat-pullthrough', 'priority': 90}]
-policy_file = ROOT / 'gar-upstream-policies.json'
+policy_file = ROOT / 'examples' / 'gar-upstream-policies.json'
 assert json.loads(policy_file.read_text()) == policy, 'Upstream policy file does not match this environment'
 if describe('openshift-pullthrough').returncode:
     command('create virtual repository', ['artifacts', 'repositories', 'create', 'openshift-pullthrough', '--project=' + PROJECT, '--location=' + LOCATION, '--repository-format=docker', '--mode=virtual-repository', '--upstream-policy-file=' + str(policy_file), '--description=Quay and Red Hat virtual mirror for drejniak zero-egress POC', '--labels=purpose=gar-pull-secret-poc', '--format=json'])

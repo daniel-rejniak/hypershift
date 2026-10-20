@@ -4,29 +4,46 @@ This directory collects the setup commands, ESO definitions, and image patches
 used to validate GAR downloads for HyperShift control planes and workers. It uses
 the standard operator and normal pull-secret authentication.
 
-Start with the [proposal and manual examples](../../GAR-POC-OVERVIEW.md) for the
-architecture, credential flow, exact YAML fields, and proposed implementation PRs.
+Start with the [proposal and manual examples](docs/GAR-POC-OVERVIEW.md) for the
+architecture, credential flow, exact YAML fields, and proposed implementation sequence.
+The [pull-secret lifecycle plan](docs/PULL-SECRET-LIFECYCLE-PLAN.md) describes the
+next POC work: automatic creation, rotation, worker updates, and regional reuse.
+The [technical design](docs/PULL-SECRET-LIFECYCLE-DESIGN.md) explains the API calls,
+Secret Manager version selection, worker verification, and rotation recovery.
 
 The reference is based on HyperShift revision
 `3659d94f893751bcb0dd48cd3ad0f026e4fb7095`. The tested operator image version was
 `bc8675b2441e1f1d7f07d68687945f2de85e7526`. This branch adds examples and documentation;
 it does not require building an operator image.
 
+## Directory layout
+
+All POC material is contained in this directory, separate from the HyperShift
+application source elsewhere in the repository.
+
+```text
+gar-pull-secret-poc/
+├── README.md       # Setup instructions and recorded results
+├── docs/           # Proposal, credential flow, IAM, and mirror settings
+├── examples/       # Kubernetes patches, ESO definitions, and GAR configuration
+└── scripts/        # POC setup scripts
+```
+
 ## Files
 
 | File | Purpose |
 | --- | --- |
-| [setup.sh](setup.sh) | Create or reuse the GAR download account and store its Docker login in customer-project Secret Manager. |
-| [setup-repositories.py](setup-repositories.py) | Add the Red Hat remote repository and shared virtual repository beside the existing Quay cache; configure upstream credentials and access. |
-| [gar-upstream-policies.json](gar-upstream-policies.json) | List the virtual repository's two upstream repositories and their priorities. |
-| [external-secret.yaml](external-secret.yaml) | Create the GAR SecretStore and combined pull secrets for the operator and HostedCluster. |
-| [managed-pull-secret-patch.yaml](managed-pull-secret-patch.yaml) | Make the existing ExternalSecrets import the combined credentials while keeping the `pull-secret` name. |
-| [operator-mirror-patch.yaml](operator-mirror-patch.yaml) | Set the operator and startup images plus control-plane registry mappings. |
-| [external-dns-mirror-patch.yaml](external-dns-mirror-patch.yaml) | Set the DNS updater image to GAR. |
-| [catalog-mirror-patch.yaml](catalog-mirror-patch.yaml) | Set the HostedCluster's catalog registry mapping. |
-| [catalog-credentials-patch.yaml](catalog-credentials-patch.yaml) | Record the selective Red Hat credential merge, already included in `external-secret.yaml`. |
-| [Worker mirror patch](../gcp-gar-mirror-patch.yaml) | Record the worker mapping tested with the Quay remote repository. The proposal shows the equivalent shared virtual address. |
-| [Alternative pull-secret reference patch](../gcp-gar-pull-secret-patch.yaml) | Earlier example for clusters whose pull-secret reference is managed manually. For Gecko-managed clusters, use the ESO overlay above. |
+| [setup.sh](scripts/setup.sh) | Create or reuse the GAR download account and store its Docker login in customer-project Secret Manager. |
+| [setup-repositories.py](scripts/setup-repositories.py) | Add the Red Hat remote repository and shared virtual repository beside the existing Quay cache; configure upstream credentials and access. |
+| [gar-upstream-policies.json](examples/gar-upstream-policies.json) | List the virtual repository's two upstream repositories and their priorities. |
+| [external-secret.yaml](examples/external-secret.yaml) | Create the GAR SecretStore and combined pull secrets for the operator and HostedCluster. |
+| [managed-pull-secret-patch.yaml](examples/managed-pull-secret-patch.yaml) | Make the existing ExternalSecrets import the combined credentials while keeping the `pull-secret` name. |
+| [operator-mirror-patch.yaml](examples/operator-mirror-patch.yaml) | Set the operator and startup images plus control-plane registry mappings. |
+| [external-dns-mirror-patch.yaml](examples/external-dns-mirror-patch.yaml) | Set the DNS updater image to GAR. |
+| [catalog-mirror-patch.yaml](examples/catalog-mirror-patch.yaml) | Set the HostedCluster's catalog registry mapping. |
+| [catalog-credentials-patch.yaml](examples/catalog-credentials-patch.yaml) | Record the selective Red Hat credential merge, already included in `external-secret.yaml`. |
+| [Worker mirror patch](examples/gcp-gar-mirror-patch.yaml) | Record the worker mapping tested with the Quay remote repository. The proposal shows the equivalent shared virtual address. |
+| [Alternative pull-secret reference patch](examples/gcp-gar-pull-secret-patch.yaml) | Earlier example for clusters whose pull-secret reference is managed manually. For Gecko-managed clusters, use the ESO overlay above. |
 
 ## Environment and prerequisites
 
@@ -42,9 +59,8 @@ The files contain the actual POC's resource names:
 
 Use an existing dev all-in-one environment with a HostedCluster, ESO, its base
 SecretStores, and an authenticated Quay remote repository named `quay-pullthrough`.
-That repository is supplied by the infrastructure's `gar-pull-through-cache`
-Terraform module. `setup-repositories.py` adds Red Hat and the virtual repository;
-it expects the Quay repository to exist.
+`setup-repositories.py` adds Red Hat and the virtual repository; it expects the
+Quay repository to exist.
 
 Install `gcloud`, `kubectl`, `jq`, and Python 3. Authenticate to Google Cloud and
 the management cluster with permissions to create service-account keys, manage
@@ -54,30 +70,31 @@ adapt the resource names in the scripts, manifests, and upstream policy together
 
 ## Reproduce the configuration
 
-Run from the repository root. The commands below change the named development
-environment when executed.
+From the repository root, enter this POC directory first. Run all subsequent
+commands from here. The commands below change the named development environment
+when executed.
 
 ```sh
-POC=examples/gcp-gar-pull-secret-poc
+cd gar-pull-secret-poc
 CTX=gke_dev-mgt-us-c1-drejniak_us-central1_dev-mgt-us-c1-drejniak-gke
 HCNS=clusters-795f77ca-a68b-4b5c-af76-e30749b30a67
 HCNAME=drejniak
 
 # Create/reuse the GAR login, then configure the repositories.
-bash "$POC/setup.sh"
-python3 "$POC/setup-repositories.py"
+bash scripts/setup.sh
+python3 scripts/setup-repositories.py
 
 # Deliver the combined credentials into both namespaces.
-kubectl --context="$CTX" apply -f "$POC/external-secret.yaml"
+kubectl --context="$CTX" apply -f examples/external-secret.yaml
 kubectl --context="$CTX" -n "$HCNS" wait externalsecret/gcp-gar-pull-secret \
   --for=condition=Ready --timeout=120s
 kubectl --context="$CTX" -n hypershift wait externalsecret/gcp-gar-pull-secret \
   --for=condition=Ready --timeout=120s
 
 kubectl --context="$CTX" -n "$HCNS" patch externalsecret pull-secret \
-  --type=merge --patch-file="$POC/managed-pull-secret-patch.yaml"
+  --type=merge --patch-file=examples/managed-pull-secret-patch.yaml
 kubectl --context="$CTX" -n hypershift patch externalsecret pull-secret \
-  --type=merge --patch-file="$POC/managed-pull-secret-patch.yaml"
+  --type=merge --patch-file=examples/managed-pull-secret-patch.yaml
 
 kubectl --context="$CTX" -n "$HCNS" annotate externalsecret pull-secret \
   force-sync="$(date +%s)" --overwrite
@@ -105,11 +122,11 @@ kubectl --context="$CTX" -n argocd annotate application hypershift \
   argocd.argoproj.io/skip-reconcile=true --overwrite
 
 kubectl --context="$CTX" -n hypershift patch deployment operator \
-  --type=strategic --patch-file="$POC/operator-mirror-patch.yaml"
+  --type=strategic --patch-file=examples/operator-mirror-patch.yaml
 kubectl --context="$CTX" -n hypershift patch deployment external-dns \
-  --type=strategic --patch-file="$POC/external-dns-mirror-patch.yaml"
+  --type=strategic --patch-file=examples/external-dns-mirror-patch.yaml
 kubectl --context="$CTX" -n "$HCNS" patch hostedcluster "$HCNAME" \
-  --type=merge --patch-file="$POC/catalog-mirror-patch.yaml"
+  --type=merge --patch-file=examples/catalog-mirror-patch.yaml
 ```
 
 For workers, apply the tested mirror mapping before creating NodePools:
@@ -140,7 +157,7 @@ Validation on 19 October 2026 established:
 Credential replacement must reach existing GCP workers as well as Kubernetes
 Secrets and future worker setup data before revoking an old key. Existing
 bootstrap tokens also capture a pull-secret hash, so changing credentials requires
-checking bootstrap recovery. The [credential-update guide](../../docs/content/how-to/common/global-pull-secret.md)
+checking bootstrap recovery. The [credential-update guide](../docs/content/how-to/common/global-pull-secret.md)
 explains the platform-specific behavior.
 
 When returning to Git-managed deployments, save the desired image settings in
