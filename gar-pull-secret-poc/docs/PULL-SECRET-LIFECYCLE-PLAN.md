@@ -7,10 +7,18 @@ deliver it to control planes and workers, and replace it without interrupting
 image downloads. Test the complete replacement process before enabling automatic
 removal of old keys.
 
-Keep GAR in the current management project for this work. Use the tested
-service-account JSON-key login, Secret Manager, and External Secrets Operator
-(ESO). The proposal assumes service-account key creation is permitted and one
-shared download account per region. Rotation periods remain configurable.
+Keep GAR in the current management project for this work. The implementation
+outline below describes the tested service-account JSON-key option, using Secret
+Manager and External Secrets Operator (ESO). It assumes service-account key
+creation is permitted and one shared download account per region. Rotation
+periods remain configurable.
+
+The [overview compares three authentication alternatives](GAR-POC-OVERVIEW.md#authentication-options-and-poc-choice).
+The third, [ESO-generated short-lived tokens using WIF](GAR-POC-OVERVIEW.md#alternative-3-eso-generated-short-lived-tokens),
+is a new investigation, not a validated implementation. It could replace the
+JSON-key generation and rotation jobs below. Choose the production method after
+proving token generation, merging, and renewal for control-plane consumers,
+existing workers, and worker bootstrap.
 
 This is a draft plan. The jobs and rotation behavior described below have not
 been implemented or validated.
