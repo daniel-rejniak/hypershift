@@ -35,6 +35,7 @@ type CacheValue struct {
 	Payload         []byte
 	SecretName      string
 	CloudConfigHash string
+	PullSecretHash  string
 }
 
 type entry struct {

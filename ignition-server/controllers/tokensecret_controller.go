@@ -15,8 +15,10 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
@@ -111,6 +113,8 @@ type TokenSecretReconciler struct {
 	client.Client
 	IgnitionProvider IgnitionProvider
 	PayloadStore     *ExpiringCache
+	// RefreshPullSecret keeps bootstrap credentials current without changing NodePool rollout inputs.
+	RefreshPullSecret bool
 }
 
 func tokenSecretAnnotationPredicate(ctx context.Context) predicate.Predicate {
@@ -132,9 +136,43 @@ func tokenSecretAnnotationPredicate(ctx context.Context) predicate.Predicate {
 func (r *TokenSecretReconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager) error {
 	log := ctrl.Log.WithName("secret-token-controller")
 	log.Info("SetupWithManager", "ns", os.Getenv("MY_NAMESPACE"))
-	return ctrl.NewControllerManagedBy(mgr).
-		For(&corev1.Secret{}).WithEventFilter(tokenSecretAnnotationPredicate(ctx)).
-		Complete(r)
+	controller := ctrl.NewControllerManagedBy(mgr).
+		For(&corev1.Secret{}, builder.WithPredicates(tokenSecretAnnotationPredicate(ctx)))
+	if r.RefreshPullSecret {
+		controller.Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(r.tokensForPullSecret))
+	}
+	return controller.Complete(r)
+}
+
+// tokensForPullSecret refreshes every bootstrap payload when the HCP pull secret changes.
+func (r *TokenSecretReconciler) tokensForPullSecret(ctx context.Context, obj client.Object) []ctrl.Request {
+	if !r.RefreshPullSecret || obj.GetName() != pullSecretName {
+		return nil
+	}
+	secrets := &corev1.SecretList{}
+	if err := r.List(ctx, secrets, client.InNamespace(obj.GetNamespace())); err != nil {
+		ctrl.LoggerFrom(ctx).Error(err, "Unable to enqueue tokens for pull secret update")
+		return nil
+	}
+	var requests []ctrl.Request
+	for i := range secrets.Items {
+		if _, ok := secrets.Items[i].Annotations[TokenSecretAnnotation]; ok {
+			requests = append(requests, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(&secrets.Items[i])})
+		}
+	}
+	return requests
+}
+
+func (r *TokenSecretReconciler) currentPullSecretHash(ctx context.Context, namespace string) (string, error) {
+	secret := &corev1.Secret{}
+	if err := r.Get(ctx, client.ObjectKey{Namespace: namespace, Name: pullSecretName}, secret); err != nil {
+		return "", fmt.Errorf("failed to read current pull secret: %w", err)
+	}
+	data := secret.Data[corev1.DockerConfigJsonKey]
+	if len(data) == 0 {
+		return "", fmt.Errorf("current pull secret has no %s data", corev1.DockerConfigJsonKey)
+	}
+	return util.HashSimple(data), nil
 }
 
 func processIfMatchesAnnotation(logger logr.Logger, obj client.Object) bool {
@@ -231,12 +269,26 @@ func (r *TokenSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
+	requeueAfter := ttl/2 - durationDeref(timeLived)
+	// Retry even if a source event was missed. This does not rotate the ignition token ID.
+	if r.RefreshPullSecret && (requeueAfter <= 0 || requeueAfter > time.Minute) {
+		requeueAfter = time.Minute
+	}
 
 	token := string(tokenSecret.Data[TokenSecretTokenKey])
+	pullSecretHash := string(tokenSecret.Data[TokenSecretPullSecretHashKey])
+	if r.RefreshPullSecret {
+		pullSecretHash, err = r.currentPullSecretHash(ctx, tokenSecret.Namespace)
+		if err != nil {
+			r.PayloadStore.Delete(token)
+			r.PayloadStore.Delete(string(tokenSecret.Data[TokenSecretOldTokenKey]))
+			return ctrl.Result{}, err
+		}
+	}
 	cloudConfigHash := string(tokenSecret.Data[TokenSecretCloudConfigHashKey])
 	if value, ok := r.PayloadStore.Get(token); ok {
-		if value.CloudConfigHash != cloudConfigHash {
-			log.Info("Cloud config hash changed, invalidating cached payload")
+		if value.CloudConfigHash != cloudConfigHash || (r.RefreshPullSecret && value.PullSecretHash != pullSecretHash) {
+			log.Info("Cloud config or pull secret changed, invalidating cached payload")
 			r.PayloadStore.Delete(token)
 		} else {
 			log.Info("Payload found in cache")
@@ -248,7 +300,7 @@ func (r *TokenSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 				}
 				TokenRotationTotal.Inc()
 			}
-			return ctrl.Result{RequeueAfter: ttl/2 - durationDeref(timeLived)}, nil
+			return ctrl.Result{RequeueAfter: requeueAfter}, nil
 		}
 	}
 
@@ -256,11 +308,11 @@ func (r *TokenSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	oldToken, ok := tokenSecret.Data[TokenSecretOldTokenKey]
 	if ok {
 		if value, ok := r.PayloadStore.Get(string(oldToken)); ok {
-			if value.CloudConfigHash == cloudConfigHash {
+			if value.CloudConfigHash == cloudConfigHash && (!r.RefreshPullSecret || value.PullSecretHash == pullSecretHash) {
 				r.PayloadStore.Set(token, value)
-				return ctrl.Result{RequeueAfter: ttl/2 - durationDeref(timeLived)}, nil
+				return ctrl.Result{RequeueAfter: requeueAfter}, nil
 			}
-			log.Info("Cloud config hash changed, invalidating old token cached payload")
+			log.Info("Cloud config or pull secret changed, invalidating old token cached payload")
 			r.PayloadStore.Delete(string(oldToken))
 		}
 	}
@@ -285,7 +337,6 @@ func (r *TokenSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 
 	PayloadCacheMissTotal.Inc()
-	pullSecretHash := string(tokenSecret.Data[TokenSecretPullSecretHashKey])
 	hcConfigurationHash := string(tokenSecret.Data[TokenSecretHCConfigurationHashKey])
 	additionalTrustBundleHash := string(tokenSecret.Data[TokenSecretAdditionalTrustBundleHashKey])
 	osStream := string(tokenSecret.Data[TokenSecretOSStreamKey])
@@ -323,7 +374,16 @@ func (r *TokenSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 
 	log.Info("IgnitionProvider generated payload")
-	cacheValue := CacheValue{Payload: payload, SecretName: tokenSecret.Name, CloudConfigHash: cloudConfigHash}
+	if r.RefreshPullSecret {
+		currentHash, err := r.currentPullSecretHash(ctx, tokenSecret.Namespace)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if currentHash != pullSecretHash {
+			return ctrl.Result{}, fmt.Errorf("pull secret changed while generating ignition payload, retrying")
+		}
+	}
+	cacheValue := CacheValue{Payload: payload, SecretName: tokenSecret.Name, CloudConfigHash: cloudConfigHash, PullSecretHash: pullSecretHash}
 	r.PayloadStore.Set(token, cacheValue)
 	oldToken, ok = tokenSecret.Data[TokenSecretOldTokenKey]
 	if ok {
@@ -354,7 +414,7 @@ func (r *TokenSecretReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, fmt.Errorf("failed to patch tokenSecret with payload content: %w", err)
 	}
 
-	return ctrl.Result{RequeueAfter: ttl/2 - durationDeref(timeLived)}, nil
+	return ctrl.Result{RequeueAfter: requeueAfter}, nil
 }
 
 func hasSameReasonAndMessage(tokenSecret *corev1.Secret, reason string, message error) bool {

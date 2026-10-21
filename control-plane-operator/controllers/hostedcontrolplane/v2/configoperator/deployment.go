@@ -8,6 +8,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/manifests"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/imageregistry"
+	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/proxy"
 
@@ -46,6 +47,10 @@ func (h *hcco) adaptDeployment(cpContext component.WorkloadContext, deployment *
 			fmt.Sprintf("--oauth-port=%d", cpContext.InfraStatus.OAuthPort),
 			"--registry-overrides", imageregistry.ConvertRegistryOverridesToCommandLineFlag(h.registryOverrides),
 		)
+
+		if hcp.Spec.Platform.Type == hyperv1.GCPPlatform && k8sutil.HasAnnotationWithValue(hcp, k8sutil.GCPPullSecretRefreshAnnotation, "true") {
+			c.Command = append(c.Command, "--enable-gcp-pull-secret-refresh=true")
+		}
 
 		if hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
 			c.Command = append(c.Command, "--controllers=controller-manager-ca,resources,user-ca-bundle,inplaceupgrader,drainer,hcpstatus")

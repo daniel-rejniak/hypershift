@@ -10,6 +10,7 @@ import (
 	"github.com/openshift/hypershift/support/config"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/imageregistry"
+	"github.com/openshift/hypershift/support/k8sutil"
 	"github.com/openshift/hypershift/support/podspec"
 	"github.com/openshift/hypershift/support/proxy"
 
@@ -58,6 +59,9 @@ func (ign *ignitionServer) adaptDeployment(cpContext component.WorkloadContext, 
 			"--registry-overrides", imageregistry.ConvertRegistryOverridesToCommandLineFlag(ign.releaseProvider.GetRegistryOverrides()),
 			"--platform", string(hcp.Spec.Platform.Type),
 		)
+		if hcp.Spec.Platform.Type == hyperv1.GCPPlatform && k8sutil.HasAnnotationWithValue(hcp, k8sutil.GCPPullSecretRefreshAnnotation, "true") {
+			c.Args = append(c.Args, "--enable-gcp-pull-secret-refresh=true")
+		}
 
 		if len(tlsArgs) > 0 {
 			c.Args = append(c.Args, tlsArgs...)

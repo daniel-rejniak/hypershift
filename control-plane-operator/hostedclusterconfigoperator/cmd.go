@@ -126,6 +126,8 @@ type HostedClusterConfigOperator struct {
 
 	enableCIDebugOutput bool
 
+	enableGCPPullSecretRefresh bool
+
 	clusterSignerCA []byte
 
 	registryOverrides map[string]string
@@ -156,6 +158,7 @@ func newHostedClusterConfigOperatorCommand() *cobra.Command {
 	flags.StringSliceVar(&cpo.Controllers, "controllers", cpo.Controllers, "Controllers to run with this operator")
 	flags.StringVar(&cpo.platformType, "platform-type", "", "The platform of the cluster")
 	flags.BoolVar(&cpo.enableCIDebugOutput, "enable-ci-debug-output", false, "If extra CI debug output should be enabled")
+	flags.BoolVar(&cpo.enableGCPPullSecretRefresh, "enable-gcp-pull-secret-refresh", false, "Enable experimental pull-secret refresh for GCP hosted clusters")
 	flags.StringVar(&cpo.HostedControlPlaneName, "hosted-control-plane", cpo.HostedControlPlaneName, "Name of the hosted control plane that owns this operator")
 	flags.StringVar(&cpo.KonnectivityAddress, "konnectivity-address", cpo.KonnectivityAddress, "Address of external konnectivity endpoint")
 	flags.Int32Var(&cpo.KonnectivityPort, "konnectivity-port", cpo.KonnectivityPort, "Port of external konnectivity endpoint")
@@ -305,7 +308,7 @@ func (o *HostedClusterConfigOperator) Run(ctx context.Context) error {
 	}
 
 	controllersToRun := map[string]operator.ControllerSetupFunc{}
-	if o.platformType == string(hyperv1.AzurePlatform) || o.platformType == string(hyperv1.AWSPlatform) {
+	if globalPullSecretEnabled(o.platformType, o.enableGCPPullSecretRefresh) {
 		controllersToRun[globalps.ControllerName] = globalps.Setup
 	}
 
@@ -348,4 +351,9 @@ func (o *HostedClusterConfigOperator) Run(ctx context.Context) error {
 	}
 	configmetrics.Register(mgr.GetCache())
 	return operatorConfig.Start(ctx)
+}
+
+func globalPullSecretEnabled(platformType string, enableGCPPullSecretRefresh bool) bool {
+	return platformType == string(hyperv1.AzurePlatform) || platformType == string(hyperv1.AWSPlatform) ||
+		(platformType == string(hyperv1.GCPPlatform) && enableGCPPullSecretRefresh)
 }

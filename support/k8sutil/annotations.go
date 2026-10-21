@@ -12,6 +12,11 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
+// GCPPullSecretRefreshAnnotation opts a GCP HostedCluster into experimental
+// pull-secret refresh. Set it before creating Replace NodePools and label those
+// NodePools for the global pull-secret syncer.
+const GCPPullSecretRefreshAnnotation = "hypershift.openshift.io/gcp-pull-secret-refresh"
+
 // HasAnnotationWithValue checks if a Kubernetes object has a specific annotation with a given value.
 func HasAnnotationWithValue(obj metav1.Object, key, expectedValue string) bool {
 	annotations := obj.GetAnnotations()
