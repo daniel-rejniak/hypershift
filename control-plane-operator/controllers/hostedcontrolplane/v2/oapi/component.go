@@ -1,6 +1,8 @@
 package oapi
 
 import (
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/common"
 	kasv2 "github.com/openshift/hypershift/control-plane-operator/controllers/hostedcontrolplane/v2/kas"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/util"
@@ -33,6 +35,7 @@ func (k *openshiftAPIServer) NeedsManagementKASAccess() bool {
 func NewComponent() component.ControlPlaneComponent {
 	return component.NewDeploymentComponent(ComponentName, &openshiftAPIServer{}).
 		WithAdaptFunction(adaptDeployment).
+		WithReloadableSecrets(reloadablePullSecrets).
 		WithManifestAdapter(
 			"config.yaml",
 			component.WithAdaptFunction(adaptConfigMap),
@@ -54,4 +57,14 @@ func NewComponent() component.ControlPlaneComponent {
 		}).
 		InjectAvailabilityProberContainer(util.AvailabilityProberOpts{}).
 		Build()
+}
+
+func reloadablePullSecrets(cpContext component.WorkloadContext) []string {
+	if cpContext.HCP.Spec.Platform.Type != hyperv1.GCPPlatform ||
+		!util.HasAnnotationWithValue(cpContext.HCP, util.GCPPullSecretRefreshAnnotation, "true") {
+		return nil
+	}
+	// Each ImageStreamImport request creates a new credentials context, which
+	// reads the mounted Docker configuration. Token renewal needs no rollout.
+	return []string{common.PullSecret(cpContext.HCP.Namespace).Name}
 }

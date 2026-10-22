@@ -187,19 +187,20 @@ func TestPodConfigMapNames(t *testing.T) {
 
 func TestPodSecretNames(t *testing.T) {
 	tests := []struct {
-		name    string
-		podSpec corev1.PodSpec
-		expect  []string
+		name         string
+		podSpec      corev1.PodSpec
+		excludeNames []string
+		expect       []string
 	}{
 		{
-			name: "volumes",
+			name: "When Secrets are mounted directly, it should return their names",
 			podSpec: corev1.PodSpec{
 				Volumes: []corev1.Volume{cmVolume("cm1"), secretVolume("s1"), secretVolume("s2"), emptyDirVolume("e3")},
 			},
 			expect: []string{"s1", "s2"},
 		},
 		{
-			name: "projected",
+			name: "When Secrets are projected, it should return their names",
 			podSpec: corev1.PodSpec{
 				Volumes: []corev1.Volume{
 					projectedVolume("pcms1").
@@ -215,7 +216,7 @@ func TestPodSecretNames(t *testing.T) {
 			expect: []string{"ps2", "ps1"},
 		},
 		{
-			name: "volumes and projected",
+			name: "When Secrets use both mount types, it should return their names",
 			podSpec: corev1.PodSpec{
 				Volumes: []corev1.Volume{secretVolume("s1"), secretVolume("s2"),
 					projectedVolume("pss").withSecrets("ps3").volume(),
@@ -225,12 +226,25 @@ func TestPodSecretNames(t *testing.T) {
 			},
 			expect: []string{"s1", "s2", "ps3", "ps4"},
 		},
+		{
+			name: "When reloadable Secrets use both mount types, it should exclude only those names",
+			podSpec: corev1.PodSpec{Volumes: []corev1.Volume{
+				secretVolume("pull-secret"), secretVolume("serving-cert"),
+				projectedVolume("projected").withSecrets("pull-secret", "client-cert").volume(),
+			}},
+			excludeNames: []string{"pull-secret", "not-mounted"},
+			expect:       []string{"serving-cert", "client-cert"},
+		},
+		{
+			name:   "When no Secrets are mounted, it should return an empty list",
+			expect: []string{},
+		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			g := NewGomegaWithT(t)
-			result := podSecretNames(&test.podSpec)
+			result := podSecretNames(&test.podSpec, test.excludeNames)
 			sort.StringSlice(result).Sort()
 			sort.StringSlice(test.expect).Sort()
 			g.Expect(result).To(Equal(test.expect))

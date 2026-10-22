@@ -63,6 +63,14 @@ func (b *controlPlaneWorkloadBuilder[T]) WithPredicate(predicate func(cpContext 
 	return b
 }
 
+// WithReloadableSecrets declares mounted Secrets that the component can reread
+// while running. It only excludes their contents from this component's rollout
+// hash; Secret reconciliation, watches, and volume mounts remain unchanged.
+func (b *controlPlaneWorkloadBuilder[T]) WithReloadableSecrets(names func(cpContext WorkloadContext) []string) *controlPlaneWorkloadBuilder[T] {
+	b.workload.reloadableSecrets = names
+	return b
+}
+
 func (b *controlPlaneWorkloadBuilder[T]) WithManifestAdapter(manifestName string, opts ...option) *controlPlaneWorkloadBuilder[T] {
 	adapter := &genericAdapter{}
 	for _, opt := range opts {

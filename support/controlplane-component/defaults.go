@@ -489,7 +489,7 @@ func podConfigMapNames(spec *corev1.PodSpec, excludeNames []string) []string {
 	return sets.List(names)
 }
 
-func podSecretNames(spec *corev1.PodSpec) []string {
+func podSecretNames(spec *corev1.PodSpec, excludeNames []string) []string {
 	names := sets.New[string]()
 	for _, v := range spec.Volumes {
 		switch {
@@ -502,6 +502,9 @@ func podSecretNames(spec *corev1.PodSpec) []string {
 				}
 			}
 		}
+	}
+	for _, name := range excludeNames {
+		names.Delete(name)
 	}
 	return sets.List(names)
 }
@@ -520,7 +523,11 @@ func fetchResource[T client.Object](ctx context.Context, obj T, namespace string
 
 func (c *controlPlaneWorkload[T]) applyWatchedResourcesAnnotation(cpContext ControlPlaneContext, podTemplate *corev1.PodTemplateSpec) error {
 	// remove duplicate entries if any.
-	secretNames := podSecretNames(&podTemplate.Spec)
+	var reloadableSecrets []string
+	if c.reloadableSecrets != nil {
+		reloadableSecrets = c.reloadableSecrets(cpContext.workloadContext())
+	}
+	secretNames := podSecretNames(&podTemplate.Spec, reloadableSecrets)
 	configMapNames := podConfigMapNames(&podTemplate.Spec, configMapsToExcludeFromHash)
 
 	hashString, err := computeResourceHash(secretNames, configMapNames,

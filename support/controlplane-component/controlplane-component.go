@@ -135,6 +135,10 @@ type controlPlaneWorkload[T client.Object] struct {
 
 	adapt func(cpContext WorkloadContext, obj T) error
 
+	// reloadableSecrets identifies mounted Secrets that this component rereads
+	// without a restart. Their contents do not contribute to the rollout hash.
+	reloadableSecrets func(cpContext WorkloadContext) []string
+
 	// adapters for Secret, ConfigMap, Service, ServiceMonitor, etc.
 	manifestsAdapters map[string]genericAdapter
 	// predicate is called at the beginning, the component is disabled if it returns false.
