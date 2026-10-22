@@ -1,0 +1,8 @@
+# Keep the runtime, PKI binary and capability labels from the selected release.
+# Use bin/gar-cpo-image as the build context, containing the Linux CPO binary.
+FROM quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:b8b8542fde5c74c42d740ae9f34859c0303db2868a7936aacc9dceb402d3836c
+ARG SOURCE_COMMIT
+COPY control-plane-operator /usr/bin/control-plane-operator
+LABEL org.opencontainers.image.revision="${SOURCE_COMMIT}"
+LABEL io.openshift.build.commit.id="${SOURCE_COMMIT}"
+LABEL org.opencontainers.image.description="OpenShift 4.22.17 CPO with opt-in GCP GAR credential refresh"

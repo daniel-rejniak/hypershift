@@ -2365,6 +2365,7 @@ func reconcileHostedControlPlaneAnnotations(hcp *hyperv1.HostedControlPlane, hcl
 		hyperv1.AWSKMSProviderImage,
 		hyperv1.PortierisImageAnnotation,
 		hyperutil.DebugDeploymentsAnnotation,
+		hyperutil.GCPPullSecretRefreshAnnotation,
 		hyperv1.DisableProfilingAnnotation,
 		hyperv1.PrivateIngressControllerAnnotation,
 		hyperv1.IngressControllerLoadBalancerScope,

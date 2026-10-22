@@ -55,14 +55,15 @@ func init() {
 }
 
 type Options struct {
-	Addr                string
-	CertFile            string
-	KeyFile             string
-	RegistryOverrides   map[string]string
-	Platform            string
-	WorkDir             string
-	MetricsAddr         string
-	FeatureGateManifest string
+	Addr                       string
+	CertFile                   string
+	KeyFile                    string
+	RegistryOverrides          map[string]string
+	Platform                   string
+	WorkDir                    string
+	MetricsAddr                string
+	FeatureGateManifest        string
+	EnableGCPPullSecretRefresh bool
 }
 
 // This is a https server that enable us to satisfy
@@ -96,6 +97,7 @@ func NewStartCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.WorkDir, "work-dir", opts.WorkDir, "Directory in which to store transient working data")
 	cmd.Flags().StringVar(&opts.MetricsAddr, "metrics-addr", opts.MetricsAddr, "The address the metric endpoint binds to.")
 	cmd.Flags().StringVar(&opts.FeatureGateManifest, "feature-gate-manifest", opts.FeatureGateManifest, "Path to a rendered featuregates.config.openshift.io/v1 file")
+	cmd.Flags().BoolVar(&opts.EnableGCPPullSecretRefresh, "enable-gcp-pull-secret-refresh", false, "Refresh GCP bootstrap payloads when registry credentials change")
 
 	cmd.Run = func(cmd *cobra.Command, args []string) {
 		ctx, cancel := context.WithCancel(context.Background())
@@ -118,7 +120,7 @@ func NewStartCommand() *cobra.Command {
 
 // setUpPayloadStoreReconciler sets up manager with a TokenSecretReconciler controller
 // to keep the PayloadStore up to date.
-func setUpPayloadStoreReconciler(ctx context.Context, registryOverrides map[string]string, cloudProvider hyperv1.PlatformType, cacheDir string, metricsAddr string, featureGateManifest string) (ctrl.Manager, error) {
+func setUpPayloadStoreReconciler(ctx context.Context, registryOverrides map[string]string, cloudProvider hyperv1.PlatformType, cacheDir string, metricsAddr string, featureGateManifest string, enableGCPPullSecretRefresh bool) (ctrl.Manager, error) {
 	if os.Getenv(namespaceEnvVariableName) == "" {
 		return nil, fmt.Errorf("environment variable %s is empty, this is not supported", namespaceEnvVariableName)
 	}
@@ -157,8 +159,9 @@ func setUpPayloadStoreReconciler(ctx context.Context, registryOverrides map[stri
 	}
 
 	if err = (&controllers.TokenSecretReconciler{
-		Client:       mgr.GetClient(),
-		PayloadStore: payloadStore,
+		Client:            mgr.GetClient(),
+		PayloadStore:      payloadStore,
+		RefreshPullSecret: enableGCPPullSecretRefresh && cloudProvider == hyperv1.GCPPlatform,
 		IgnitionProvider: &controllers.LocalIgnitionProvider{
 			ReleaseProvider: &releaseinfo.ProviderWithOpenShiftImageRegistryOverridesDecorator{
 				Delegate: &releaseinfo.RegistryMirrorProviderDecorator{
@@ -197,7 +200,7 @@ func run(ctx context.Context, opts Options) error {
 		return fmt.Errorf("failed to load serving cert: %w", err)
 	}
 
-	mgr, err := setUpPayloadStoreReconciler(ctx, opts.RegistryOverrides, hyperv1.PlatformType(opts.Platform), opts.WorkDir, opts.MetricsAddr, opts.FeatureGateManifest)
+	mgr, err := setUpPayloadStoreReconciler(ctx, opts.RegistryOverrides, hyperv1.PlatformType(opts.Platform), opts.WorkDir, opts.MetricsAddr, opts.FeatureGateManifest, opts.EnableGCPPullSecretRefresh)
 	if err != nil {
 		return fmt.Errorf("error setting up manager: %w", err)
 	}

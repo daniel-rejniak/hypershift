@@ -52,6 +52,9 @@ func (ign *ignitionServer) adaptDeployment(cpContext component.WorkloadContext, 
 			"--registry-overrides", util.ConvertRegistryOverridesToCommandLineFlag(ign.releaseProvider.GetRegistryOverrides()),
 			"--platform", string(hcp.Spec.Platform.Type),
 		)
+		if hcp.Spec.Platform.Type == hyperv1.GCPPlatform && util.HasAnnotationWithValue(hcp, util.GCPPullSecretRefreshAnnotation, "true") {
+			c.Args = append(c.Args, "--enable-gcp-pull-secret-refresh=true")
+		}
 
 		util.UpsertEnvVar(c, corev1.EnvVar{
 			Name:  "OPENSHIFT_IMG_OVERRIDES",

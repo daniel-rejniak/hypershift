@@ -731,6 +731,18 @@ func TestReconcileHostedControlPlaneAnnotations(t *testing.T) {
 
 	tests := []testCase{
 		{
+			name: "When GAR refresh is enabled, it should propagate the opt-in annotation to the control plane",
+			hcAnnotations: map[string]string{
+				hyperutil.GCPPullSecretRefreshAnnotation: "true",
+			},
+			expectedAnnotations: map[string]string{
+				hyperutil.GCPPullSecretRefreshAnnotation:           "true",
+				hyperutil.HostedClusterAnnotation:                  hcKey,
+				hyperv1.DisableClusterAutoscalerAnnotation:         "true",
+				hyperv1.DisableAWSNodeTerminationHandlerAnnotation: "true",
+			},
+		},
+		{
 			name: "Swift annotation is mirrored",
 			hcAnnotations: map[string]string{
 				hyperv1.SwiftPodNetworkInstanceAnnotation: "swift-network-instance",

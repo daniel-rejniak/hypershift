@@ -46,6 +46,10 @@ func (h *hcco) adaptDeployment(cpContext component.WorkloadContext, deployment *
 			"--registry-overrides", util.ConvertRegistryOverridesToCommandLineFlag(h.registryOverrides),
 		)
 
+		if hcp.Spec.Platform.Type == hyperv1.GCPPlatform && util.HasAnnotationWithValue(hcp, util.GCPPullSecretRefreshAnnotation, "true") {
+			c.Command = append(c.Command, "--enable-gcp-pull-secret-refresh=true")
+		}
+
 		if hcp.Spec.Platform.Type == hyperv1.IBMCloudPlatform {
 			c.Command = append(c.Command, "--controllers=controller-manager-ca,resources,inplaceupgrader,drainer,hcpstatus")
 		}

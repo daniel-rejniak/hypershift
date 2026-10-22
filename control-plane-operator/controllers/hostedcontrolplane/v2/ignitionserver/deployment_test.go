@@ -9,6 +9,7 @@ import (
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/api"
 	component "github.com/openshift/hypershift/support/controlplane-component"
 	"github.com/openshift/hypershift/support/releaseinfo"
+	"github.com/openshift/hypershift/support/util"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -28,9 +29,28 @@ func TestAdaptDeployment(t *testing.T) {
 		name                   string
 		imageRegistryOverrides map[string][]string
 		setupEnv               func(t *testing.T)
+		platform               hyperv1.PlatformType
+		refreshAnnotation      string
+		expectRefresh          bool
 	}{
 		{
 			name: "When called it should produce a deterministic deployment spec",
+		},
+		{
+			name:     "When GCP opts in, it should enable ignition credential refresh",
+			platform: hyperv1.GCPPlatform, refreshAnnotation: "true", expectRefresh: true,
+		},
+		{
+			name:     "When GCP does not opt in, it should preserve existing ignition arguments",
+			platform: hyperv1.GCPPlatform,
+		},
+		{
+			name:     "When GCP disables refresh, it should preserve existing ignition arguments",
+			platform: hyperv1.GCPPlatform, refreshAnnotation: "false",
+		},
+		{
+			name:     "When AWS has the annotation, it should preserve existing ignition arguments",
+			platform: hyperv1.AWSPlatform, refreshAnnotation: "true",
 		},
 		{
 			name: "When proxy env vars are set it should produce a deterministic deployment spec",
@@ -86,6 +106,8 @@ func TestAdaptDeployment(t *testing.T) {
 				Client:  client,
 				HCP:     hcp,
 			}
+			hcp.Spec.Platform.Type = tt.platform
+			hcp.Annotations = map[string]string{util.GCPPullSecretRefreshAnnotation: tt.refreshAnnotation}
 
 			ign := &ignitionServer{releaseProvider: mockRelease}
 
@@ -107,6 +129,11 @@ func TestAdaptDeployment(t *testing.T) {
 
 			err := ign.adaptDeployment(cpContext, deployment)
 			g.Expect(err).ToNot(HaveOccurred())
+			if tt.expectRefresh {
+				g.Expect(deployment.Spec.Template.Spec.Containers[0].Args).To(ContainElement("--enable-gcp-pull-secret-refresh=true"))
+			} else {
+				g.Expect(deployment.Spec.Template.Spec.Containers[0].Args).ToNot(ContainElement("--enable-gcp-pull-secret-refresh=true"))
+			}
 
 			for _, container := range deployment.Spec.Template.Spec.Containers {
 				if container.Name == ComponentName {
