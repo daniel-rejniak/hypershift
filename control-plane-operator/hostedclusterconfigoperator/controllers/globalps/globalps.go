@@ -41,6 +41,7 @@ type Reconciler struct {
 	hcUncachedClient       crclient.Client
 	hcpNamespace           string
 	hccoImage              string
+	refreshPullSecret      bool
 
 	upsert.CreateOrUpdateProvider
 }
@@ -128,7 +129,7 @@ func (r *Reconciler) reconcileGlobalPullSecret(ctx context.Context) error {
 
 		// Reconcile DaemonSet with only original pull secret (global-pull-secret will be optional and empty)
 		daemonSet := manifests.GlobalPullSecretDaemonSet()
-		if err := reconcileDaemonSet(ctx, daemonSet, "", originalSecret.Name, configSeed, r.hcUncachedClient, r.CreateOrUpdate, r.hccoImage); err != nil {
+		if err := reconcileDaemonSet(ctx, daemonSet, "", originalSecret.Name, configSeed, r.refreshPullSecret, r.hcUncachedClient, r.CreateOrUpdate, r.hccoImage); err != nil {
 			return fmt.Errorf("failed to reconcile global pull secret daemon set: %w", err)
 		}
 
@@ -171,14 +172,14 @@ func (r *Reconciler) reconcileGlobalPullSecret(ctx context.Context) error {
 	// Generate a hash of the global pull secret content to trigger pod recreation when content changes
 	configSeed := util.HashSimple(globalPullSecretBytes)
 	daemonSet := manifests.GlobalPullSecretDaemonSet()
-	if err := reconcileDaemonSet(ctx, daemonSet, secret.Name, originalSecret.Name, configSeed, r.hcUncachedClient, r.CreateOrUpdate, r.hccoImage); err != nil {
+	if err := reconcileDaemonSet(ctx, daemonSet, secret.Name, originalSecret.Name, configSeed, r.refreshPullSecret, r.hcUncachedClient, r.CreateOrUpdate, r.hccoImage); err != nil {
 		return fmt.Errorf("failed to reconcile global pull secret daemon set: %w", err)
 	}
 
 	return nil
 }
 
-func reconcileDaemonSet(ctx context.Context, daemonSet *appsv1.DaemonSet, globalPullSecretName string, originalPullSecretName string, configSeed string, c crclient.Client, createOrUpdate upsert.CreateOrUpdateFN, hccoImage string) error {
+func reconcileDaemonSet(ctx context.Context, daemonSet *appsv1.DaemonSet, globalPullSecretName string, originalPullSecretName string, configSeed string, refreshPullSecret bool, c crclient.Client, createOrUpdate upsert.CreateOrUpdateFN, hccoImage string) error {
 	log := ctrl.LoggerFrom(ctx)
 	log.Info("Reconciling global pull secret daemon set")
 
@@ -192,8 +193,7 @@ func reconcileDaemonSet(ctx context.Context, daemonSet *appsv1.DaemonSet, global
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
-						"name":             manifests.GlobalPullSecretDSName,
-						configSeedLabelKey: configSeed,
+						"name": manifests.GlobalPullSecretDSName,
 					},
 				},
 				Spec: corev1.PodSpec{
@@ -240,6 +240,12 @@ func reconcileDaemonSet(ctx context.Context, daemonSet *appsv1.DaemonSet, global
 					Volumes: buildGlobalPSVolumes(globalPullSecretName, originalPullSecretName),
 				},
 			},
+		}
+
+		// GCP credential refresh uses directory-mounted Secrets and the syncer's
+		// polling loop, so new token bytes do not need to replace the Pod.
+		if !refreshPullSecret {
+			daemonSet.Spec.Template.Labels[configSeedLabelKey] = configSeed
 		}
 
 		return nil

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	hyperv1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/controllers/resources/manifests"
 	"github.com/openshift/hypershift/control-plane-operator/hostedclusterconfigoperator/operator"
 
@@ -70,6 +71,7 @@ func Setup(ctx context.Context, opts *operator.HostedClusterConfigOperatorConfig
 		kubeSystemSecretClient: kubeSystemClient,
 		hcpNamespace:           opts.Namespace,
 		hccoImage:              hccoImage,
+		refreshPullSecret:      opts.PlatformType == hyperv1.GCPPlatform && opts.EnableGCPPullSecretRefresh,
 		CreateOrUpdateProvider: opts.TargetCreateOrUpdateProvider,
 	}
 

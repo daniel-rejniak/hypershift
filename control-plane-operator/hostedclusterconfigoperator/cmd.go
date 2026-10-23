@@ -342,6 +342,7 @@ func (o *HostedClusterConfigOperator) Run(ctx context.Context) error {
 		OAuthPort:                     o.OAuthPort,
 		OperateOnReleaseImage:         os.Getenv("OPERATE_ON_RELEASE_IMAGE"),
 		EnableCIDebugOutput:           o.enableCIDebugOutput,
+		EnableGCPPullSecretRefresh:    o.enableGCPPullSecretRefresh,
 		ImageMetaDataProvider:         imageMetaDataProvider,
 		ManagementClusterCapabilities: mgmtClusterCaps,
 	}

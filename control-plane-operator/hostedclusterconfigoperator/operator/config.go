@@ -78,6 +78,7 @@ type HostedClusterConfigOperatorConfig struct {
 	OAuthPort                     int32
 	OperateOnReleaseImage         string
 	EnableCIDebugOutput           bool
+	EnableGCPPullSecretRefresh    bool
 	ImageMetaDataProvider         util.ImageMetadataProvider
 	ManagementClusterCapabilities capabilities.CapabiltyChecker
 
